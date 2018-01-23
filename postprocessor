@@ -1,0 +1,102 @@
+print("Starting Benny's postprocessing")
+
+#open inputfile, using their naming
+inFileName = sys.argv[1]
+inFile = open(inFileName+"_cellink.gcode",'r')
+inbuffer = [] #empty list to store each line so I can access them multiple times
+outbuffer = ""
+
+for line in inFile: #storing each line as item in list
+        inbuffer.append(line)
+
+#creating my Regex
+
+eRegex = re.compile(r'.*E\d\.\d{5}|.*E\d\d\.\d{5}|.*E\d\d\d\.\d{5}') #matches lines containing an E-command (assuming it is smaller than 100 because there are E commands bigger 10 or 100, maybe .*E\d*\.\d{5} would be better then)
+#the difference comes from the Command M83 vs M82 (use relative vs absolute extrusion distances, respectively, so in Gcodes using M82 the bigger the model gets, the bigger the E-Command will be.
+
+#checking lines for E-command, adding needed Gcode
+
+#0 = PH1 1 = PH2 2 = LED
+lastlinehadE = 0
+linehasE = 0
+lastline = ""
+printing_started = 0
+
+def checktool(line):
+        #tool Regex
+        toolph1 = re.compile(r'T0')
+        toolph2 = re.compile(r'T1')
+        toolLED = re.compile(r'T2')
+        ph1 = re.search(toolph1,line)
+        ph2 = re.search(toolph2,line)
+        LED = re.search(toolLED,line)
+        if ph1:
+                return 0
+        elif ph2:
+                return 1
+        elif LED:
+                return 2
+        else:
+                return None
+
+tool = 0
+lasttool = 0
+currenttool = 0
+
+for line in inbuffer:
+        currenttool = checktool(line)
+        if currenttool == None:
+                tool = lasttool
+        elif currenttool == tool:
+                pass
+        elif currenttool != tool:
+                tool = currenttool
+        matchobject = re.search(eRegex,line)
+        if matchobject: #"if line has E"
+                linehasE = 1
+                if lastlinehadE == 1:
+                        outbuffer += line
+                elif lastlinehadE == 0:
+                        if tool == 0:
+                                if not "M760" in lastline:
+                                        outbuffer += "M760;that was me\n"
+                        elif tool == 1:
+                                if not "M762" in lastline:
+                                        outbuffer += "M762;that was me\n"
+                        elif tool == 2:
+                                if not "M764" in lastline:
+                                        outbuffer += "M764;that was me\n"
+                        else:
+                                print("ERROR; TOOL NUMBER OUT OF RANGE")
+                                outbuffer += ";ERROR, TOOL NUMBER OUT OF RANGE"
+                        outbuffer += line
+        else:
+                linehasE = 0
+                if lastlinehadE == 1:
+                        if tool == 0:
+                                if not "M761" in lastline:
+                                        outbuffer += "M761;that was me\n"
+                        elif tool == 1:
+                                if not "M763" in lastline:
+                                        outbuffer += "M763;that was me\n"
+                        elif tool == 2:
+                                if not "M765" in lastline:
+                                        outbuffer += "M765;that was me\n"
+                        outbuffer += line
+                elif lastlinehadE == 0:
+                        outbuffer += line
+
+        if linehasE == 1:
+                lastlinehadE = 1
+        else:
+                lastlinehadE = 0
+        lastline = line
+#before the PH moves it should retract, before valve is opened it should unretract
+                        
+        
+outbuffer += "\n;Post Post processed by Benny"
+inFile.close()
+outFile = open(inFileName+"_benny.gcode",'w')
+outFile.write(outbuffer)
+outFile.close()
+print("All done")
